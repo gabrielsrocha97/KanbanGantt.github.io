@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Kanban → Gantt → Roadmap</title>
+
+  <!-- React + Babel -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Mermaid.js -->
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs";
+    window.mermaid = mermaid;
+    mermaid.initialize({ startOnLoad: false });
+  </script>
+
+  <!-- SheetJS (para exportar Excel) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    /* Estilos visuais melhorados */
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --muted: #334155;
+      --text: #e5e7eb;
+      --dim: #cbd5e1;
+      --accent: #22d3ee;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --hold: #fb923c;
+      --danger: #ef4444;
+      --card-bg: #0b1220;
+      --border-radius: 12px;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Helvetica Neue, Arial;
+      line-height: 1.6;
+      padding: 0;
+      margin: 0;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    header {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+      padding: 16px;
+      background: var(--panel);
+      border-radius: var(--border-radius);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    h1::before {
+      content: "📊";
+    }
+    
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    
+    .group {
+      background: var(--card-bg);
+      border: 1px solid var(--muted);
+      padding: 12px;
+      border-radius: var(--border-radius);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    
+    label {
+      font-size: 13px;
+      color: var(--dim);
+      font-weight: 500;
+    }
+    
+    input, select, button, textarea {
+      border-radius: 8px;
+      border: 1px solid var(--muted);
+      background: var(--card-bg);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2);
+    }
+    
+    button {
+      background: var(--accent);
+      color: #001018;
+      border: 0;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+    }
+    
+    button:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+    
+    button.secondary {
+      background: var(--card-bg);
+      border: 1px solid var(--muted);
+      color: var(--text);
+    }
+    
+    button.warn {
+      background: var(--danger);
+      color: #fff;
+      border: 0;
+    }
+    
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    
+    .col {
+      background: var(--panel);
+      border: 1px solid var(--muted);
+      border-radius: var(--border-radius);
+      padding: 16px;
+      min-height: 400px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    
+    .col h2 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--dim);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--muted);
+    }
+    
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #0b1220;
+      font-weight: bold;
+    }
+    
+    .pill.ok {
+      background: var(--ok);
+    }
+    
+    .pill.warn {
+      background: var(--warn);
+    }
+    
+    .pill.hold {
+      background: var(--hold);
+      color: #111;
+    }
+    
+    .task {
+      background: var(--card-bg);
+      border: 1px solid var(--muted);
+      padding: 14px;
+      border-radius: var(--border-radius);
+      margin: 12px 0;
+      cursor: grab;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .task:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      border-color: var(--accent);
+    }
+    
+    .task .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    
+    .task .title {
+      font-weight: 600;
+      font-size: 15px;
+    }
+    
+    .mini {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    
+    .mini .field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .ghost {
+      outline: 2px dashed var(--accent);
+      border-radius: var(--border-radius);
+      padding: 20px;
+      margin: 12px 0;
+      opacity: .6;
+      text-align: center;
+      color: var(--dim);
+    }
+    
+    .add-form {
+      background: var(--panel);
+      border: 1px solid var(--muted);
+      border-radius: var(--border-radius);
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+    
+    .add-form h3 {
+      width: 100%;
+      margin-bottom: 12px;
+      font-size: 18px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .add-form h3::before {
+      content: "➕";
+    }
+    
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .export {
+      background: var(--panel);
+      border: 1px solid var(--muted);
+      border-radius: var(--border-radius);
+      padding: 20px;
+      margin-top: 24px;
+    }
+    
+    .export h3 {
+      margin-bottom: 16px;
+      font-size: 18px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .export h3::before {
+      content: "📤";
+    }
+    
+    .export-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      margin-bottom: 16px;
+      font-family: monospace;
+      resize: vertical;
+    }
+    
+    #mermaid-container {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 16px;
+      margin-bottom: 16px;
+      overflow: auto;
+      max-width: 100%;
+    }
+    
+    #mermaid-container svg {
+      max-width: 100%;
+      height: auto;
+    }
+    
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      background: var(--ok);
+      color: white;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+    }
+    
+    .notification.show {
+      transform: translateX(0);
+    }
+    
+    .notification::before {
+      content: "✓";
+      font-weight: bold;
+    }
+    
+    @media (max-width: 1100px) {
+      .board {
+        grid-template-columns: 1fr;
+      }
+      
+      header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .controls {
+        justify-content: center;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .group, .add-form {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="root" class="container"></div>
+  <div id="notification" class="notification"></div>
+
+  <!-- App principal -->
+  <script type="text/babel">
+    const {useEffect,useMemo,useState} = React;
+    const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
+    const sanitize = (s) => (s||"").replace(/:/g," - ").trim();
+    const groupBy = (arr,key) => arr.reduce((a,i)=>{(a[i[key]]??=[]).push(i);return a;},{}); 
+
+    // Função para mostrar notificação
+    function showNotification(message, duration = 3000) {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.classList.add('show');
+      
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, duration);
+    }
+
+    function App(){
+      const [session, setSession] = useState("Default");
+      const [sessions, setSessions] = useState(["Default"]);
+      const [tasks, setTasks] = useState([]);
+      const [newTitle,setNewTitle] = useState("");
+      const [newStatus,setNewStatus] = useState("crit");
+      const [newStart,setNewStart] = useState("");
+      const [newDeadline,setNewDeadline] = useState("");
+      const [loading,setLoading] = useState(false);
+      const [autoUpdate, setAutoUpdate] = useState(true);
+
+      // Carregar sessões do localStorage
+      useEffect(() => {
+        const savedSessions = localStorage.getItem('kanban_sessions');
+        if (savedSessions) {
+          const sessionsData = JSON.parse(savedSessions);
+          setSessions(sessionsData);
+        }
+      }, []);
+
+      // Carregar tarefas do localStorage quando a sessão mudar
+      useEffect(() => {
+        const savedTasks = localStorage.getItem(`kanban_tasks_${session}`);
+        if (savedTasks) {
+          setTasks(JSON.parse(savedTasks));
+        } else {
+          setTasks([]);
+        }
+      }, [session]);
+
+      // Salvar tarefas no localStorage quando elas mudarem
+      useEffect(() => {
+        if (tasks.length > 0 || localStorage.getItem(`kanban_tasks_${session}`)) {
+          localStorage.setItem(`kanban_tasks_${session}`, JSON.stringify(tasks));
+        }
+      }, [tasks, session]);
+
+      // Salvar sessões no localStorage quando elas mudarem
+      useEffect(() => {
+        if (sessions.length > 0) {
+          localStorage.setItem('kanban_sessions', JSON.stringify(sessions));
+        }
+      }, [sessions]);
+
+      const grouped = useMemo(() => groupBy(tasks, "status"), [tasks]);
+
+      const createSession = () => {
+        const name = prompt("Nome da nova sessão:"); 
+        if (!name) return;
+        
+        if (sessions.includes(name)) {
+          alert("Já existe uma sessão com este nome.");
+          return;
+        }
+        
+        const updatedSessions = [...sessions, name].sort();
+        setSessions(updatedSessions);
+        setSession(name);
+        setTasks([]);
+        showNotification(`Sessão "${name}" criada.`);
+      };
+
+      const deleteSession = () => {
+        if (sessions.length <= 1) {
+          alert("Não é possível excluir a única sessão existente.");
+          return;
+        }
+        
+        if (!confirm(`Tem certeza que deseja excluir a sessão "${session}"?`)) return;
+        
+        // Remover a sessão atual
+        const updatedSessions = sessions.filter(s => s !== session);
+        setSessions(updatedSessions);
+        
+        // Remover tarefas da sessão
+        localStorage.removeItem(`kanban_tasks_${session}`);
+        
+        // Selecionar a primeira sessão disponível
+        setSession(updatedSessions[0]);
+        
+        showNotification(`Sessão "${session}" excluída.`);
+      };
+
+      const addTask = () => {
+        const title = sanitize(newTitle); 
+        if (!title) {
+          alert("Por favor, insira um título para a tarefa.");
+          return;
+        }
+        
+        if (!newStart) {
+          alert("Por favor, selecione uma data de início.");
+          return;
+        }
+        
+        const t = { 
+          id: uid(), 
+          title, 
+          status: newStatus, 
+          start: newStart, 
+          deadline: newDeadline 
+        };
+        
+        setTasks(prev => [...prev, t]);
+        setNewTitle("");
+        setNewStart("");
+        setNewDeadline("");
+        setNewStatus("crit");
+        
+        showNotification("Tarefa adicionada com sucesso!");
+      };
+
+      const updateTask = (id, patch) => {
+        setTasks(prev => prev.map(task => 
+          task.id === id ? { ...task, ...patch } : task
+        ));
+      };
+
+      const removeTask = (id) => {
+        setTasks(prev => prev.filter(task => task.id !== id));
+        showNotification("Tarefa removida.");
+      };
+
+      const onDragStart = (ev, id) => {
+        ev.dataTransfer.setData("text/taskId", id);
+      };
+      
+      const onDrop = (ev, status) => { 
+        const id = ev.dataTransfer.getData("text/taskId"); 
+        updateTask(id, { status }); 
+        ev.preventDefault(); 
+      };
+      
+      const allowDrop = (ev) => ev.preventDefault();
+
+      const calculateDuration = (start, deadline) => {
+        if (!start || !deadline) return 1;
+        
+        const startDate = new Date(start);
+        const endDate = new Date(deadline);
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        return diffDays > 0 ? diffDays : 1;
+      };
+
+      // Modo de edição manual do Mermaid
+      const [manualMermaid, setManualMermaid] = useState(false);
+      const [mermaidTextManual, setMermaidTextManual] = useState("");
+
+      const mermaidTextAuto = useMemo(() => {
+        const toLine = (t) => {
+          const start = t.start || new Date().toISOString().split('T')[0];
+          const dur = calculateDuration(t.start, t.deadline);
+          return `    ${sanitize(t.title)} :${t.status}, ${start}, ${dur}d`;
+        };
+        // Só adiciona linhas se houver tarefas, não coloca '--' sozinho
+        const done = (grouped.done && grouped.done.length > 0) ? grouped.done.map(toLine).join("\n") : "";
+        const act  = (grouped.active && grouped.active.length > 0) ? grouped.active.map(toLine).join("\n") : "";
+        const crt  = (grouped.crit && grouped.crit.length > 0) ? grouped.crit.map(toLine).join("\n") : "";
+        return [
+          "---",
+          "config:",
+          "  theme: neutral",
+          "---",
+          "gantt",
+          `    title Roadmap (${session})`,
+          "    dateFormat  YYYY-MM-DD",
+          "",
+          "    section Concluído",
+          done,
+          "    section Em Progresso",
+          act,
+          "    section Pendente",
+          crt
+        ].filter(Boolean).join("\n");
+      }, [tasks, session]);
+
+      // O texto usado para o gráfico depende do modo
+      const mermaidText = manualMermaid ? mermaidTextManual : mermaidTextAuto;
+
+      const updateMermaidChart = () => {
+        const container = document.getElementById("mermaid-container");
+        if (window.mermaid && container) {
+          container.innerHTML = "Gerando gráfico...";
+          setTimeout(() => {
+            try {
+              mermaid.render("graphDiv", mermaidText, (svgCode) => {
+                container.innerHTML = svgCode;
+              });
+            } catch (error) {
+              container.innerHTML = `<div class=\"error\">Erro ao renderizar gráfico: ${error.message}</div>`;
+            }
+          }, 100);
+        }
+      };
+
+      useEffect(() => {
+        if (!manualMermaid && autoUpdate) {
+          updateMermaidChart();
+        }
+      }, [mermaidTextAuto, autoUpdate, manualMermaid]);
+
+      const exportToExcel = () => {
+        // Preparar dados para exportação
+        const data = tasks.map(task => ({
+          Tarefa: task.title,
+          Status: task.status === 'done' ? 'Concluído' : task.status === 'active' ? 'Em Progresso' : 'Pendente',
+          'Data Início': task.start || 'Não definida',
+          Prazo: task.deadline || 'Não definido',
+          Duração: calculateDuration(task.start, task.deadline) + ' dias'
+        }));
+        
+        // Criar planilha
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Tarefas");
+        
+        // Gerar arquivo e fazer download
+        XLSX.writeFile(workbook, `kanban_${session}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        showNotification("Planilha exportada com sucesso!");
+      };
+
+      const exportToImage = () => {
+        const svg = document.querySelector("#mermaid-container svg");
+        if (!svg) {
+          alert("Gere o gráfico primeiro antes de exportar.");
+          return;
+        }
+        
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `grafico_gantt_${session}.svg`;
+        a.click();
+        showNotification("Imagem exportada com sucesso!");
+      };
+
+      const copyMermaidText = () => {
+        navigator.clipboard.writeText(mermaidText)
+          .then(() => showNotification("Texto Mermaid copiado!"))
+          .catch(() => alert("Falha ao copiar texto. Por favor, copie manualmente."));
+      };
+
+      // Exportação para CSV
+      const exportToCSV = () => {
+        const csvRows = [
+          ["id","title","status","start","deadline"].join(",")
+        ];
+        tasks.forEach(t => {
+          csvRows.push([
+            t.id,
+            '"'+(t.title||'').replace(/"/g,'""')+'"',
+            t.status,
+            t.start||"",
+            t.deadline||""
+          ].join(","));
+        });
+        const csvContent = csvRows.join("\r\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `kanban_${session}_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        showNotification("CSV exportado com sucesso!");
+      };
+
+      // Importação de CSV
+      const importFromCSV = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const text = evt.target.result;
+          const lines = text.split(/\r?\n/).filter(Boolean);
+          if (lines.length < 2) return alert("CSV vazio ou inválido.");
+          const [header, ...rows] = lines;
+          const cols = header.split(",");
+          const idx = {
+            id: cols.indexOf("id"),
+            title: cols.indexOf("title"),
+            status: cols.indexOf("status"),
+            start: cols.indexOf("start"),
+            deadline: cols.indexOf("deadline")
+          };
+          if (Object.values(idx).some(i => i === -1)) return alert("Cabeçalho CSV inválido.");
+          const imported = rows.map(row => {
+            const vals = row.match(/("[^"]*"|[^,]+)/g) || [];
+            return {
+              id: vals[idx.id] || uid(),
+              title: (vals[idx.title]||"").replace(/^"|"$/g,"").replace(/""/g,'"'),
+              status: vals[idx.status] || "crit",
+              start: vals[idx.start] || "",
+              deadline: vals[idx.deadline] || ""
+            };
+          });
+          setTasks(imported);
+          showNotification("CSV importado!");
+        };
+        reader.readAsText(file);
+      };
+
+      return (
+        <>
+          <header>
+            <h1>Kanban → Gantt → Roadmap</h1>
+            <div className="controls">
+              <div className="group">
+                <label>Sessão</label>
+                <select value={session} onChange={e => setSession(e.target.value)}>
+                  {sessions.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <button className="secondary" onClick={createSession}>Nova sessão</button>
+                <button className="warn" onClick={deleteSession} disabled={sessions.length <= 1}>Excluir sessão</button>
+              </div>
+            </div>
+          </header>
+
+          <div className="add-form">
+            <h3>Adicionar Nova Tarefa</h3>
+            <div className="form-group">
+              <label>Título da Tarefa</label>
+              <input 
+                type="text" 
+                placeholder="Digite o título da tarefa..." 
+                value={newTitle} 
+                onChange={e => setNewTitle(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label>Status</label>
+              <select value={newStatus} onChange={e => setNewStatus(e.target.value)}>
+                <option value="done">Concluído</option>
+                <option value="active">Em Progresso</option>
+                <option value="crit">Pendente</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Data de Início</label>
+              <input 
+                type="date" 
+                value={newStart} 
+                onChange={e => setNewStart(e.target.value)} 
+              />
+            </div>
+            <div className="form-group">
+              <label>Prazo Final</label>
+              <input 
+                type="date" 
+                value={newDeadline} 
+                onChange={e => setNewDeadline(e.target.value)} 
+              />
+            </div>
+            <button onClick={addTask}>Adicionar Tarefa</button>
+            <div style={{marginLeft: 'auto', display: 'flex', gap: 8}}>
+              <button className="secondary" onClick={exportToCSV}>Exportar CSV</button>
+              <label className="secondary" style={{cursor:'pointer',padding:'10px 16px',margin:0}}>
+                Importar CSV
+                <input type="file" accept=".csv" style={{display:'none'}} onChange={importFromCSV} />
+              </label>
+            </div>
+          </div>
+
+          <div className="board">
+            <Column 
+              title="Concluído" 
+              pillClass="ok" 
+              status="done" 
+              tasks={grouped.done} 
+              onDragStart={onDragStart} 
+              onDrop={onDrop} 
+              allowDrop={allowDrop} 
+              onChange={updateTask} 
+              onDelete={removeTask}
+            />
+            <Column 
+              title="Em Progresso" 
+              pillClass="warn" 
+              status="active" 
+              tasks={grouped.active} 
+              onDragStart={onDragStart} 
+              onDrop={onDrop} 
+              allowDrop={allowDrop} 
+              onChange={updateTask} 
+              onDelete={removeTask}
+            />
+            <Column 
+              title="Pendente" 
+              pillClass="hold" 
+              status="crit" 
+              tasks={grouped.crit} 
+              onDragStart={onDragStart} 
+              onDrop={onDrop} 
+              allowDrop={allowDrop} 
+              onChange={updateTask} 
+              onDelete={removeTask}
+            />
+          </div>
+
+          <section className="export">
+            <h3>Roadmap Gerado - Gráfico Gantt</h3>
+            <div className="export-controls">
+              <button onClick={updateMermaidChart}>
+                🔄 Atualizar Gráfico
+              </button>
+              <label style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <input 
+                  type="checkbox" 
+                  checked={autoUpdate} 
+                  onChange={e => setAutoUpdate(e.target.checked)} 
+                  disabled={manualMermaid}
+                />
+                Auto-atualizar
+              </label>
+              <button className="secondary" onClick={copyMermaidText}>
+                📋 Copiar Código Mermaid
+              </button>
+              <button className="secondary" onClick={exportToExcel}>
+                📊 Exportar para Excel
+              </button>
+              <button onClick={exportToImage}>
+                🖼️ Exportar como Imagem
+              </button>
+              <label style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                <input type="checkbox" checked={manualMermaid} onChange={e => {
+                  setManualMermaid(e.target.checked);
+                  if (!e.target.checked) setMermaidTextManual("");
+                }} />
+                Editar código manualmente
+              </label>
+            </div>
+            <textarea 
+              value={manualMermaid ? mermaidTextManual : mermaidTextAuto}
+              onChange={e => {
+                if (manualMermaid) setMermaidTextManual(e.target.value);
+              }}
+              readOnly={!manualMermaid}
+              style={{background: manualMermaid ? '#222' : '#181e2a', color: '#fff'}}
+            />
+            <div id="mermaid-container">Clique em "Atualizar Gráfico" para gerar o visualização</div>
+            {manualMermaid && (
+              <div style={{marginTop:8, color:'#f59e0b', fontSize:13}}>
+                <b>Atenção:</b> Ao editar manualmente, o gráfico não será mais atualizado automaticamente pelo Kanban.<br/>
+                Desmarque "Editar código manualmente" para voltar ao modo automático.
+              </div>
+            )}
+          </section>
+        </>
+      );
+    }
+
+    function Column({title, pillClass, tasks=[], status, onDragStart, onDrop, allowDrop, onChange, onDelete}){
+      return (
+        <div className="col" onDragOver={allowDrop} onDrop={(e) => onDrop(e, status)}>
+          <h2>
+            {title} 
+            <span className={`pill ${pillClass}`}>{(tasks || []).length}</span>
+          </h2>
+          
+          {(tasks || []).map(t => (
+            <TaskCard 
+              key={t.id} 
+              t={t} 
+              onDragStart={onDragStart} 
+              onChange={onChange} 
+              onDelete={onDelete}
+            />
+          ))}
+          
+          {!tasks || tasks.length === 0 ? (
+            <div className="ghost">Arraste tarefas para aqui ou adicione novas tarefas</div>
+          ) : null}
+        </div>
+      );
+    }
+
+    function TaskCard({t, onDragStart, onChange, onDelete}){
+      const [editing, setEditing] = React.useState(false);
+      const [title, setTitle] = React.useState(t.title);
+      
+      const save = () => { 
+        onChange(t.id, { title: title.trim() || t.title }); 
+        setEditing(false); 
+      };
+      
+      return (
+        <div className="task" draggable onDragStart={(e) => onDragStart(e, t.id)}>
+          <div className="row">
+            <div className="title">
+              {editing ? (
+                <input 
+                  type="text" 
+                  value={title} 
+                  onChange={e => setTitle(e.target.value)} 
+                  onKeyDown={e => e.key === "Enter" && save()} 
+                  autoFocus
+                />
+              ) : t.title}
+            </div>
+            
+            <div className="actions">
+              {editing ? (
+                <>
+                  <button className="secondary" onClick={() => {setTitle(t.title); setEditing(false);}}>
+                    Cancelar
+                  </button>
+                  <button onClick={save}>Salvar</button>
+                </>
+              ) : (
+                <>
+                  <button className="secondary" onClick={() => setEditing(true)}>
+                    Editar
+                  </button>
+                  <button className="warn" onClick={() => onDelete(t.id)}>
+                    Excluir
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          
+          <div className="mini">
+            <div className="field">
+              <label>Início:</label>
+              <input 
+                type="date" 
+                value={t.start || ""} 
+                onChange={e => onChange(t.id, { start: e.target.value })} 
+              />
+            </div>
+            
+            <div className="field">
+              <label>Prazo:</label>
+              <input 
+                type="date" 
+                value={t.deadline || ""} 
+                onChange={e => onChange(t.id, { deadline: e.target.value })} 
+              />
+            </div>
+            
+            <div className="field">
+              <label>Status:</label>
+              <select 
+                value={t.status} 
+                onChange={e => onChange(t.id, { status: e.target.value })}
+              >
+                <option value="done">Concluído</option>
+                <option value="active">Em Progresso</option>
+                <option value="crit">Pendente</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
